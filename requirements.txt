@@ -1,0 +1,19 @@
+# Install PyTorch separately (GPU build):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu126
+transformers
+datasets
+accelerate
+scikit-learn
+pandas
+numpy
+matplotlib
+ipykernel
+fastapi
+uvicorn[standard]
+pydantic-settings
+httpx
+python-dotenv
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+firebase-admin
