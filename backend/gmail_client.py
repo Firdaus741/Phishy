@@ -78,12 +78,13 @@ def parse_message(msg: dict) -> dict:
     }
 
 
-def fetch_recent_emails(max_results: int = 5) -> list[dict]:
+def fetch_recent_emails(max_results: int = 5, label: str = "INBOX") -> list[dict]:
+    """Newest emails in a Gmail label, e.g. "INBOX" or "SPAM" (read-only)."""
     service = get_service()
     resp = (
         service.users()
         .messages()
-        .list(userId="me", maxResults=max_results, labelIds=["INBOX"])
+        .list(userId="me", maxResults=max_results, labelIds=[label])
         .execute()
     )
     emails = []

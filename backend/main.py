@@ -1,17 +1,11 @@
-import os
 from contextlib import asynccontextmanager
-from email.utils import parseaddr
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from analysis import analyze
 from classifier import PhishingClassifier
-from header_checks import check_headers
-from link_checks import VirusTotal, check_links
-
-# Placeholder cutoff for the text model alone. The final Safe/Phishing verdict will combine
-# text, header and link signals; this value is only what /predict reports for the text part.
-TEXT_THRESHOLD = float(os.environ.get("PHISHY_TEXT_THRESHOLD", "0.5"))
+from link_checks import VirusTotal
 
 
 @asynccontextmanager
@@ -46,21 +40,9 @@ def health(request: Request):
 
 @app.post("/predict")
 def predict(req: PredictRequest, request: Request):
-    clf: PhishingClassifier = request.app.state.clf
-    prob, text = clf.score_email(req.subject, req.body, req.html)
-    if not text:
+    result = analyze(request.app.state.clf, request.app.state.vt, subject=req.subject, body=req.body,
+                     html=req.html, sender=req.sender, reply_to=req.reply_to,
+                     authentication_results=req.authentication_results)
+    if result is None:
         raise HTTPException(status_code=400, detail="no usable text in subject or body")
-    headers = check_headers({
-        "from": req.sender, "reply_to": req.reply_to,
-        "authentication_results": req.authentication_results,
-    })
-    sender_domain = parseaddr(req.sender)[1].rsplit("@", 1)[-1] if "@" in parseaddr(req.sender)[1] else ""
-    links = check_links(req.body, req.html, request.app.state.vt, sender_domain)
-    return {
-        "phishing_probability": round(prob, 4),
-        "text_label": "phishing" if prob >= TEXT_THRESHOLD else "safe",
-        "threshold": TEXT_THRESHOLD,
-        "model": clf.name,
-        "headers": headers,
-        "links": links,
-    }
+    return result
