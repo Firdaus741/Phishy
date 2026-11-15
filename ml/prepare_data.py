@@ -1,9 +1,10 @@
 """Build the cleaned, de-duplicated train/val/test split for the English email model."""
-import re
 from pathlib import Path
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
+
+from text_cleaning import clean, dedupe_key
 
 DATA = Path(__file__).parent / "data"
 OUT = DATA / "processed"
@@ -18,22 +19,6 @@ SOURCES = [
     ("SpamAssasin.csv", 0, 2000, "spamassassin_ham"),
     ("CEAS_08.csv", 0, 1500, "ceas_ham"),
 ]
-
-
-def clean(subject: str, body: str) -> str:
-    subject = re.sub(r"^(\s*(re|fwd?)\s*:\s*)+", "", subject, flags=re.I)
-    subject = re.sub(r"\[[^\]]{1,40}\]", " ", subject)        # list tags like [Python-Dev]
-    body = re.sub(r"(?m)^\s*>.*$", " ", body)                  # quoted reply lines
-    text = f"{subject}\n{body}"
-    text = re.sub(r"<[^>]+>", " ", text)                       # leftover HTML tags
-    text = re.sub(r"=\?[\w-]+\?[bBqQ]\?[^?]*\?=", " ", text)   # undecoded encoded-words
-    text = re.sub(r"https?://\S+|www\.\S+", " [URL] ", text)
-    text = re.sub(r"\S+@\S+\.\S+", " [EMAIL] ", text)
-    return re.sub(r"\s+", " ", text).strip()[:3000]
-
-
-def dedupe_key(text: str) -> str:
-    return re.sub(r"\d+", "0", text.lower())[:400]
 
 
 frames = []
