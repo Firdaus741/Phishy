@@ -67,6 +67,8 @@ def parse_message(msg: dict) -> dict:
     return {
         "id": msg["id"],
         "from": headers.get("from", ""),
+        "reply_to": headers.get("reply-to", ""),
+        "return_path": headers.get("return-path", ""),
         "subject": headers.get("subject", ""),
         "date": headers.get("date", ""),
         "authentication_results": headers.get("authentication-results", ""),

@@ -13,7 +13,7 @@ Final year project (UiTM, Computer Networks): a mobile app that reads a user's G
 - `ml/`: audit scripts, `text_cleaning.py` (shared `clean()` and `dedupe_key()`), `prepare_data.py` (older 5-source split in `ml/data/processed/`, no longer used for training), `build_unified.py` (unified schema, writes `ml/data/unified/`), `train.py` (fine-tunes any Hugging Face model on `unified.csv`, English rows, writes `ml/out/<model>/metrics.json` + `errors.csv`, saves the model to `backend/models/<model>`), `benchmark.py` (`baselines`, `loso`, `latency` commands, writes `ml/out/benchmark/`)
 - `ml/Training Result/`: pasted terminal logs of each run, kept as evidence for Chapter 4
 - `ml/data/unified/`: `unified.csv` (text, label, category, source, language, split), `external_zenodo.csv` (external check only, never trained on), `source_report.csv` (per-source format and rows kept, for Chapter 4)
-- `backend/`: `main.py` (FastAPI, `/health`), `gmail_client.py` (login, fetch, parse emails)
+- `backend/`: `main.py` (FastAPI, `/health`), `gmail_client.py` (login, fetch, parse emails incl. Reply-To and Return-Path), `header_checks.py` (rule-based SPF/DKIM/DMARC, Reply-To and brand-impersonation checks; `suspicious` = auth failed or brand mismatch, Reply-To mismatch is a weak signal), `test_header_checks.py` (run: `python backend\test_header_checks.py`), `classifier.py` (loads DistilBERT once, scores emails with the shared `clean()`), `link_checks.py` (extract links, local rules, VirusTotal lookup with sqlite cache and rate limit), `test_predict.py`, `test_link_checks.py` (mocked VirusTotal, no key needed). Secrets go in `backend/.env` (copy `backend/.env.example`; git-ignored).
 - `ml/data/`, `ml/out/`, `backend/models/` are git-ignored
 
 ## Environment (Windows, PowerShell, project on D:\Phishy)
@@ -65,18 +65,22 @@ Four test emails are wrong in every model (ambiguous or poorly labelled), so the
 
 Leave-one-source-out (model trained WITHOUT the source, accuracy on that source). Phishing rows are detection rate:
 
-| Held out | TF-IDF LogReg | ELECTRA-small | DistilBERT |
-|---|---|---|---|
-| nazario (phishing) | 3.7% | 26.1% | 30.0% |
-| nigerian (phishing) | 0.5% | 2.1% | 7.9% |
-| 5 legit sources | 98.3-99.8% | 97.1-99.3% | 98.3-99.7% |
+| Held out | TF-IDF LogReg | ELECTRA-small | MiniLM-L12 | DistilBERT |
+|---|---|---|---|---|
+| nazario (phishing) | 3.7% | 26.1% | 23.9% | 30.0% |
+| nigerian (phishing) | 0.5% | 2.1% | 9.1% | 7.9% |
+| 5 legit sources (range) | 98.3-99.8% | 97.1-99.3% | 97.5-99.2% | 98.3-99.7% |
+| 5 legit sources (mean) | 99.2% | 98.2% | 98.7% | 98.8% |
 
-Reading: transformers generalise better than TF-IDF to unseen phishing, DistilBERT beats ELECTRA on all 7 folds, but every model misses most unseen phishing. With only 2 phishing sources, holding one out leaves one phishing source in training (harshest test), so this shows thin data as much as model limits. State this in the report. The header and URL checks matter because the text model alone will not generalise. CPU latency absolute values vary about 30% with machine load; ratios are stable (DistilBERT about 2x faster than BERT/RoBERTa).
+Reading: transformers generalise better than TF-IDF to unseen phishing, DistilBERT beats ELECTRA on all 7 folds, but every model misses most unseen phishing. DistilBERT vs MiniLM is a near tie (DistilBERT ahead on Nazario, MiniLM ahead on Nigerian and on 3 of 5 legit sources), so do not claim DistilBERT generalises better than MiniLM. MiniLM is faster (59 vs 91 ms) and half the size; state this as an honest alternative. With only 2 phishing sources, holding one out leaves one phishing source in training (harshest test), so this shows thin data as much as model limits. State this in the report. The header and URL checks matter because the text model alone will not generalise. CPU latency absolute values vary about 30% with machine load; ratios are stable (DistilBERT about 2x faster than BERT/RoBERTa).
 
 ## Status (update as you go)
-- Done: environment, Gmail client, FastAPI `/health`, data audit, shared `clean()` module, unified dataset (14,150 English emails), 5 Hugging Face models trained, TF-IDF baselines, leave-one-source-out for TF-IDF, ELECTRA and DistilBERT, CPU latency.
-- In progress: Chapter 4 evidence. Still missing: leave-one-source-out for MiniLM (closest rival), more phishing sources then rerun leave-one-source-out, several seeds, provenance table (URL, date, licence, SHA-256).
-- Next: header checks (rule-based SPF/DKIM/DMARC), `/predict` endpoint, VirusTotal check with caching, optional local URL classifier from `malicious_phish.csv`, verdict fusion (hand-set rule, tested on own mail since no dataset has text + headers + links), FCM, Flutter app. Commit and push the new `ml/` scripts and `Progress.md` (remote `origin` = `Firdaus741/Phishy` is set; nothing pushed since the Oct 14 commit).
+- Done: environment, Gmail client, FastAPI `/health`, data audit, shared `clean()` module, unified dataset (14,150 English emails), 5 Hugging Face models trained, TF-IDF baselines, leave-one-source-out for TF-IDF, ELECTRA, MiniLM and DistilBERT, CPU latency.
+- In progress: Chapter 4 evidence. Still missing: more phishing sources then rerun leave-one-source-out, several seeds, provenance table (URL, date, licence, SHA-256).
+- Header checks done: unit-tested (12 tests) and run on 10 real inbox emails (all Gmail-verified, all pass, no false flags). No real failure case seen yet (test on the Spam folder). The brand list in `header_checks.py` is short and illustrative: verify and extend it.
+- `/predict` done (`backend/classifier.py`, `backend/main.py`): loads `backend/models/distilbert-base-uncased` once at startup, uses the shared `clean()`, returns text probability + header result. `text_label` uses a placeholder 0.5 cutoff (env `PHISHY_TEXT_THRESHOLD`); the final verdict is not built yet. The backend scores the 1,415 test emails with exactly the same 9 errors as the training run. Run: `cd backend; python -m uvicorn main:app --reload`; tests: `cd backend; python test_predict.py`.
+- Link checks done and tested with a mocked VirusTotal (19 tests); NOT yet run against the real VirusTotal (needs the user's own free API key in `backend/.env`). Rules: links are never opened; VirusTotal is lookup-only (unknown URLs are not submitted); only scheme+host+path is sent (query/fragment dropped for privacy, `VT_STRIP_QUERY=false` to change; fewer exact matches); max 3 links per email (`VT_MAX_URLS`), chosen by priority (strong local flag, then a domain different from the sender's, then the rest); 4 requests/minute then "unchecked" (no waiting); 60 s back-off after a 429; daily cap 450 counted in the sqlite file so it survives restarts (`VT_DAILY_CAP`, the key's real limit is 500/day); 24 h cache (cache hits cost no quota); `/health` shows `requests_today`; 2+ engines = malicious, 1 = suspicious (VirusTotal has false positives). Local strong flags: IP host, punycode, user@ in URL, link text showing a different domain than the target. `/predict` now returns `links` too.
+- Next: verdict decision rule (combine text, headers, links into Safe/Phishing), VirusTotal check with caching, optional local URL classifier from `malicious_phish.csv`, verdict fusion (hand-set rule, tested on own mail since no dataset has text + headers + links), FCM, Flutter app. Commit and push the new `ml/` scripts and `Progress.md` (remote `origin` = `Firdaus741/Phishy` is set; nothing pushed since the Oct 14 commit).
 
 ## Working style
 - Explain what each command does and go one step at a time. Say so directly when something looks wrong.

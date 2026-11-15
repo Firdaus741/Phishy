@@ -9,4 +9,5 @@ token.pickle
 ml/data/
 ml/out/
 backend/models/
+backend/vt_cache.sqlite
 *.safetensors
